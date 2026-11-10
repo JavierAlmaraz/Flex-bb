@@ -401,7 +401,7 @@ jobs:
                       handler.postDelayed({
                           player?.release(); player = null; vib.cancel()
                       }, 20000)
-                  } catch (_: Exception) { }
+                  } catch (_: Exception) { } 
               }
 
               override fun onAccessibilityEvent(event: AccessibilityEvent?) {
