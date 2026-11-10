@@ -1,0 +1,436 @@
+name: Build APK v2
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Crear archivos del proyecto
+        run: |
+          cat > settings.gradle.kts <<'EOF_0'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "FlexAlert"
+          include(":app")
+          EOF_0
+          cat > build.gradle.kts <<'EOF_1'
+          plugins {
+              id("com.android.application") version "8.5.2" apply false
+              id("org.jetbrains.kotlin.android") version "1.9.24" apply false
+          }
+          EOF_1
+          cat > gradle.properties <<'EOF_2'
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          kotlin.code.style=official
+          EOF_2
+          mkdir -p app
+          cat > app/build.gradle.kts <<'EOF_3'
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+          }
+
+          android {
+              namespace = "com.example.flexalert"
+              compileSdk = 34
+
+              defaultConfig {
+                  applicationId = "com.example.flexalert"
+                  minSdk = 26
+                  targetSdk = 34
+                  versionCode = 1
+                  versionName = "1.0"
+              }
+
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+              kotlinOptions {
+                  jvmTarget = "17"
+              }
+          }
+
+          dependencies {
+              implementation("androidx.appcompat:appcompat:1.7.0")
+              implementation("androidx.core:core-ktx:1.13.1")
+          }
+          EOF_3
+          mkdir -p app/src/main
+          cat > app/src/main/AndroidManifest.xml <<'EOF_4'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+              <uses-permission android:name="android.permission.VIBRATE" />
+              <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+              <application
+                  android:label="Flex Alert"
+                  android:theme="@style/Theme.AppCompat.DayNight.DarkActionBar">
+
+                  <activity android:name=".MainActivity" android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+
+                  <service
+                      android:name=".FlexWatcherService"
+                      android:exported="false"
+                      android:label="Flex Alert"
+                      android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+                      <intent-filter>
+                          <action android:name="android.accessibilityservice.AccessibilityService" />
+                      </intent-filter>
+                      <meta-data
+                          android:name="android.accessibilityservice"
+                          android:resource="@xml/accessibility_config" />
+                  </service>
+              </application>
+          </manifest>
+          EOF_4
+          mkdir -p app/src/main/res/xml
+          cat > app/src/main/res/xml/accessibility_config.xml <<'EOF_5'
+          <?xml version="1.0" encoding="utf-8"?>
+          <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+              android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"
+              android:accessibilityFeedbackType="feedbackGeneric"
+              android:accessibilityFlags="flagReportViewIds|flagRetrieveInteractiveWindows"
+              android:canRetrieveWindowContent="true"
+              android:canPerformGestures="true"
+              android:notificationTimeout="200"
+              android:description="@string/service_desc" />
+          EOF_5
+          mkdir -p app/src/main/res/values
+          cat > app/src/main/res/values/strings.xml <<'EOF_6'
+          <resources>
+              <string name="service_desc">Refresca la app de Flex y avisa con sonido cuando aparece un bloque en tu estación.</string>
+          </resources>
+          EOF_6
+          mkdir -p app/src/main/res/layout
+          cat > app/src/main/res/layout/activity_main.xml <<'EOF_7'
+          <?xml version="1.0" encoding="utf-8"?>
+          <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:layout_width="match_parent" android:layout_height="match_parent"
+              android:orientation="vertical" android:padding="24dp">
+
+              <TextView
+                  android:layout_width="match_parent" android:layout_height="wrap_content"
+                  android:paddingBottom="16dp"
+                  android:text="Elige tus estaciones en el filtro de Flex y deja abierta la pantalla Ofertas." />
+
+              <Button android:id="@+id/btnAccessibility"
+                  android:layout_width="match_parent" android:layout_height="wrap_content"
+                  android:text="1. Activar servicio de accesibilidad" />
+
+              <Button android:id="@+id/btnBattery"
+                  android:layout_width="match_parent" android:layout_height="wrap_content"
+                  android:text="2. Quitar optimización de batería" />
+
+              <Button android:id="@+id/btnStart"
+                  android:layout_width="match_parent" android:layout_height="wrap_content"
+                  android:text="3. INICIAR (abre Flex en 5 s)" />
+
+              <Button android:id="@+id/btnStop"
+                  android:layout_width="match_parent" android:layout_height="wrap_content"
+                  android:text="DETENER" />
+
+              <Button android:id="@+id/btnDiag"
+                  android:layout_width="match_parent" android:layout_height="wrap_content"
+                  android:text="VER DIAGNÓSTICO" />
+
+              <TextView android:id="@+id/status"
+                  android:layout_width="match_parent" android:layout_height="wrap_content"
+                  android:paddingTop="16dp" android:text="Detenido" />
+          </LinearLayout>
+          EOF_7
+          mkdir -p app/src/main/java/com/example/flexalert
+          cat > app/src/main/java/com/example/flexalert/MainActivity.kt <<'EOF_8'
+          package com.example.flexalert
+
+          import android.content.Intent
+          import android.net.Uri
+          import android.os.Bundle
+          import android.os.PowerManager
+          import android.provider.Settings
+          import android.widget.Button
+          import android.widget.TextView
+          import androidx.appcompat.app.AppCompatActivity
+
+          class MainActivity : AppCompatActivity() {
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  setContentView(R.layout.activity_main)
+                  val status = findViewById<TextView>(R.id.status)
+
+                  findViewById<Button>(R.id.btnAccessibility).setOnClickListener {
+                      startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                  }
+
+                  findViewById<Button>(R.id.btnBattery).setOnClickListener {
+                      val pm = getSystemService(PowerManager::class.java)
+                      if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+                          startActivity(
+                              Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                                  .setData(Uri.parse("package:$packageName"))
+                          )
+                      }
+                  }
+
+                  findViewById<Button>(R.id.btnStart).setOnClickListener {
+                      val svc = FlexWatcherService.instance
+                      if (svc == null) {
+                          status.text = "Activa primero el servicio de accesibilidad"
+                          return@setOnClickListener
+                      }
+                      svc.start()
+                      status.text = "Activo. Abre Flex y deja la pantalla Ofertas."
+                  }
+
+                  findViewById<Button>(R.id.btnStop).setOnClickListener {
+                      FlexWatcherService.instance?.stop()
+                      status.text = "Detenido"
+                  }
+
+                  findViewById<Button>(R.id.btnDiag).setOnClickListener {
+                      status.text = "Servicio conectado: ${FlexWatcherService.instance != null}\n" +
+                          "Apps vistas: ${Diag.pkgs.joinToString().ifEmpty { "ninguna" }}\n" +
+                          "Ciclos de revision: ${Diag.loops}\n" +
+                          "Contador leido: ${Diag.lastCount}\n" +
+                          "Coincide DMX2/XMX4: ${Diag.lastMatch}\n" +
+                          "Ultimo clic: ${Diag.lastTap}"
+                  }
+              }
+          }
+          EOF_8
+          mkdir -p app/src/main/java/com/example/flexalert
+          cat > app/src/main/java/com/example/flexalert/FlexWatcherService.kt <<'EOF_9'
+          package com.example.flexalert
+
+          import android.accessibilityservice.AccessibilityService
+          import android.accessibilityservice.GestureDescription
+          import android.graphics.Path
+          import android.graphics.Rect
+          import android.media.AudioAttributes
+          import android.media.MediaPlayer
+          import android.media.RingtoneManager
+          import android.os.Handler
+          import android.os.Looper
+          import android.os.VibrationEffect
+          import android.os.Vibrator
+          import android.view.accessibility.AccessibilityEvent
+          import android.view.accessibility.AccessibilityNodeInfo
+          import kotlin.random.Random
+
+          /** Datos de diagnostico (solo nombres de paquete y resultados, nunca textos de otras apps). */
+          object Diag {
+              val pkgs = LinkedHashSet<String>()
+              var loops = 0
+              var lastCount = "-"
+              var lastMatch = false
+              var lastTap = "-"
+          }
+
+          class FlexWatcherService : AccessibilityService() {
+
+              companion object {
+                  var instance: FlexWatcherService? = null
+                  private const val MIN_DELAY = 2000L   // ms
+                  private const val MAX_DELAY = 4000L   // ms
+
+                  // Solo suena la alarma si en pantalla aparece alguno de estos codigos.
+                  private val STATIONS = listOf("DMX2", "XMX4")
+              }
+
+              private val handler = Handler(Looper.getMainLooper())
+              private var running = false
+              private var player: MediaPlayer? = null
+              private var lastUnmatchedCount = 0
+
+              // "0 de 0 ofertas", "1 de 1 oferta", "2 de 2 ofertas"...
+              private val counterRegex = Regex("""(\d+)\s+de\s+(\d+)\s+ofertas?""", RegexOption.IGNORE_CASE)
+
+              private data class Screen(val count: Int?, val match: Boolean)
+
+              private fun isAmazon(p: CharSequence?): Boolean = p?.startsWith("com.amazon.") == true
+
+              private val refreshLoop = object : Runnable {
+                  override fun run() {
+                      if (!running) return
+                      Diag.loops++
+                      val root = rootInActiveWindow
+                      val pkg = root?.packageName
+                      if (root != null && isAmazon(pkg)) {
+                          val s = readScreen(root)
+                          Diag.lastCount = s.count?.toString() ?: "no encontrado"
+                          Diag.lastMatch = s.match
+                          when {
+                              s.count == null -> { /* no estamos en Ofertas: no tocar nada */ }
+                              s.count > 0 && s.match -> { alarm(); return }
+                              else -> {
+                                  if (s.count > 0 && s.count != lastUnmatchedCount) {
+                                      lastUnmatchedCount = s.count
+                                      getSystemService(Vibrator::class.java)
+                                          ?.vibrate(VibrationEffect.createOneShot(300, VibrationEffect.DEFAULT_AMPLITUDE))
+                                  }
+                                  if (s.count == 0) lastUnmatchedCount = 0
+                                  tapRefresh(root)
+                                  handler.postDelayed({ checkAfterRefresh() }, 1200)
+                              }
+                          }
+                      } else {
+                          Diag.lastTap = "ventana activa no es de Amazon: $pkg"
+                      }
+                      scheduleNext()
+                  }
+              }
+
+              private fun scheduleNext() {
+                  if (running) handler.postDelayed(refreshLoop, Random.nextLong(MIN_DELAY, MAX_DELAY))
+              }
+
+              private fun checkAfterRefresh() {
+                  if (!running) return
+                  val root = rootInActiveWindow ?: return
+                  if (!isAmazon(root.packageName)) return
+                  val s = readScreen(root)
+                  if ((s.count ?: 0) > 0 && s.match) {
+                      handler.removeCallbacks(refreshLoop)
+                      alarm()
+                  }
+              }
+
+              fun start() {
+                  running = true
+                  lastUnmatchedCount = 0
+                  Diag.loops = 0
+                  handler.removeCallbacksAndMessages(null)
+                  handler.postDelayed(refreshLoop, 3000)
+              }
+
+              fun stop() {
+                  running = false
+                  handler.removeCallbacksAndMessages(null)
+                  player?.release()
+                  player = null
+                  getSystemService(Vibrator::class.java)?.cancel()
+              }
+
+              private fun readScreen(root: AccessibilityNodeInfo): Screen {
+                  val texts = ArrayList<String>()
+                  collectText(root, texts)
+                  var count: Int? = null
+                  for (t in texts) {
+                      val m = counterRegex.find(t) ?: continue
+                      count = maxOf(m.groupValues[1].toInt(), m.groupValues[2].toInt())
+                      break
+                  }
+                  val match = texts.any { t -> STATIONS.any { t.contains(it, ignoreCase = true) } }
+                  return Screen(count, match)
+              }
+
+              private fun collectText(node: AccessibilityNodeInfo?, out: MutableList<String>) {
+                  if (node == null) return
+                  node.text?.let { out.add(it.toString()) }
+                  node.contentDescription?.let { out.add(it.toString()) }
+                  for (i in 0 until node.childCount) collectText(node.getChild(i), out)
+              }
+
+              private fun tapRefresh(root: AccessibilityNodeInfo) {
+                  val node = root.findAccessibilityNodeInfosByText("Actualizar")
+                      .firstOrNull { it.text?.toString().equals("Actualizar", ignoreCase = true) }
+                  if (node == null) {
+                      Diag.lastTap = "no encontre el boton Actualizar"
+                      return
+                  }
+
+                  var target: AccessibilityNodeInfo? = node
+                  while (target != null && !target.isClickable) target = target.parent
+                  if (target != null && target.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                      Diag.lastTap = "clic directo OK"
+                      return
+                  }
+
+                  val r = Rect()
+                  node.getBoundsInScreen(r)
+                  val path = Path().apply { moveTo(r.exactCenterX(), r.exactCenterY()) }
+                  val stroke = GestureDescription.StrokeDescription(path, 0, 80L)
+                  val ok = dispatchGesture(GestureDescription.Builder().addStroke(stroke).build(), null, null)
+                  Diag.lastTap = "toque por coordenadas (enviado=$ok)"
+              }
+
+              private fun alarm() {
+                  running = false
+                  try {
+                      val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+                      player?.release()
+                      player = MediaPlayer().apply {
+                          setDataSource(this@FlexWatcherService, uri)
+                          setAudioAttributes(
+                              AudioAttributes.Builder()
+                                  .setUsage(AudioAttributes.USAGE_ALARM)
+                                  .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                                  .build()
+                          )
+                          isLooping = true
+                          prepare()
+                          start()
+                      }
+                      val vib = getSystemService(Vibrator::class.java)
+                      vib.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 600, 400), 0))
+                      handler.postDelayed({
+                          player?.release(); player = null; vib.cancel()
+                      }, 20000)
+                  } catch (_: Exception) { }
+              }
+
+              override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+                  val p = event?.packageName?.toString() ?: return
+                  if (p != packageName && !p.startsWith("com.android.systemui")) {
+                      Diag.pkgs.add(p)
+                      while (Diag.pkgs.size > 8) Diag.pkgs.remove(Diag.pkgs.first())
+                  }
+              }
+
+              override fun onInterrupt() { stop() }
+              override fun onServiceConnected() { instance = this }
+              override fun onDestroy() { stop(); instance = null; super.onDestroy() }
+          }
+          EOF_9
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.7
+
+      - name: Build debug APK
+        run: gradle assembleDebug --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FlexAlert-v2-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
